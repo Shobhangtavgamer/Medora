@@ -1,9 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Send } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { EmptyState } from '@/components/ui/Feedback'
 import type { Workspace } from '@/context/AuthContext'
-import { conversationsFor } from '@/data/messages'
+import { createConversation, getConversations, sendConversationMessage, type LiveConversation } from '@/lib/medoraServices'
 import { cn } from '@/lib/utils'
 
 function resourceHref(workspace: Workspace, kind: string): string {
@@ -20,11 +20,15 @@ function resourceLabel(kind: string): string {
 
 export function ConversationList({ workspace }: { workspace: Workspace }) {
   const [activeId, setActiveId] = useState<string | null>(null)
-  const convos = conversationsFor(workspace)
+  const [convos, setConvos] = useState<LiveConversation[]>([])
+  const [draft, setDraft] = useState('')
+  const [recipient, setRecipient] = useState('')
+  const [conversationError, setConversationError] = useState<string | null>(null)
+  useEffect(() => { void getConversations().then(setConvos).catch(() => setConvos([])) }, [workspace])
   const active = convos.find((c) => c.id === activeId) ?? null
 
   if (convos.length === 0) {
-    return <EmptyState title="No messages" description="Messages from your care network will appear here." />
+    return <EmptyState title="No messages" description="Start a secure conversation with another Medora user." action={<form className="flex w-full max-w-sm gap-2" onSubmit={async (event) => { event.preventDefault(); setConversationError(null); try { await createConversation(recipient); setConvos(await getConversations()); setRecipient('') } catch (error) { setConversationError(error instanceof Error ? error.message : 'Unable to start conversation.') } }}><input value={recipient} onChange={(event) => setRecipient(event.target.value)} type="email" required placeholder="Recipient email" className="min-w-0 flex-1 rounded-xl bg-white px-3 py-2 text-sm ring-1 ring-slate-200" /><button className="rounded-xl bg-brand-600 px-3 py-2 text-sm font-semibold text-white">Start</button>{conversationError ? <span className="text-xs text-red-600">{conversationError}</span> : null}</form>} />
   }
 
   return (
@@ -118,8 +122,10 @@ export function ConversationList({ workspace }: { workspace: Workspace }) {
               ))}
             </div>
 
-            <form className="flex items-center gap-2 border-t border-slate-100 px-4 py-3" onSubmit={(e) => e.preventDefault()}>
+            <form className="flex items-center gap-2 border-t border-slate-100 px-4 py-3" onSubmit={async (e) => { e.preventDefault(); if (!draft.trim() || !active) return; await sendConversationMessage(active.id, draft.trim()); setDraft(''); const updated = await getConversations(); setConvos(updated) }}>
               <input
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
                 placeholder="Write a message…"
                 className="w-full rounded-xl border-0 bg-slate-50 px-4 py-2.5 text-sm ring-1 ring-slate-200 placeholder:text-slate-400 focus:ring-2 focus:ring-brand-500"
               />

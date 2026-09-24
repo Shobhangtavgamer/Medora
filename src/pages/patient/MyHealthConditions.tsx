@@ -1,15 +1,20 @@
+import { useEffect, useState } from 'react'
 import { Stethoscope } from 'lucide-react'
 import { Card, CardContent, CardHeader } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { PageHeader } from '@/components/shared/PageHeader'
-import { conditions } from '@/data/health'
+import { getPatientClinicalSummary } from '@/lib/medoraServices'
+import { useAuth } from '@/context/AuthContext'
 
 export default function MyHealthConditions() {
+  const { user } = useAuth()
+  const [conditions, setConditions] = useState<Awaited<ReturnType<typeof getPatientClinicalSummary>>['conditions']>([])
+  useEffect(() => { if (user?.patientProfile.id) void getPatientClinicalSummary(user.patientProfile.id).then((summary) => setConditions(summary.conditions)) }, [user?.patientProfile.id])
   return (
     <div className="space-y-5">
       <PageHeader title="Conditions" description="Recorded conditions with source and date." />
       <div className="grid gap-4 md:grid-cols-2">
-        {conditions.map((c) => (
+        {conditions.length === 0 ? <Card><CardContent className="py-12 text-center text-sm text-slate-500">No conditions recorded.</CardContent></Card> : conditions.map((c) => (
           <Card key={c.id}>
             <CardHeader
               title={c.name}

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   Activity,
@@ -23,31 +23,40 @@ import { Timeline } from '@/components/shared/Timeline'
 import { RecordDetailModal } from '@/components/shared/Record'
 import { IdChip, VerifiedBadge } from '@/components/shared/IdentityBadges'
 import { useAuth } from '@/context/AuthContext'
-import { conditions, medications, allergies, timeline } from '@/data/health'
-import { accessRequests, activeAccess } from '@/data/access'
-import { careProfessionals, careOrganisations } from '@/data/careNetwork'
-import { professionalById } from '@/data/professionals'
-import { organisationById } from '@/data/organisations'
-import { recordById } from '@/data/records'
+import { getPatientClinicalSummary, getPatientAccessRequests, getPatientRecords, getPatientTimeline, approveAccessRequest, rejectAccessRequest, type AccessRequestRow } from '@/lib/medoraServices'
+import type { RecordItem } from '@/data/records'
+import type { HealthEvent } from '@/data/health'
 
 export default function PatientHome() {
   const { user } = useAuth()
+  const [records, setRecords] = useState<RecordItem[]>([])
+  const [timeline, setTimeline] = useState<HealthEvent[]>([])
+  const [requests, setRequests] = useState<AccessRequestRow[]>([])
+  const [clinical, setClinical] = useState<Awaited<ReturnType<typeof getPatientClinicalSummary>>>({ conditions: [], medications: [], allergies: [] })
   const [toast, setToast] = useState<string | null>(null)
   const [selectedRecord, setSelectedRecord] = useState<string | null>(null)
   const [reviewing, setReviewing] = useState<string | null>(null)
   const [declining, setDeclining] = useState<string | null>(null)
   const [granting, setGranting] = useState(false)
 
+  const refresh = () => user?.patientProfile.id
+    ? Promise.all([getPatientRecords(user.patientProfile.id), getPatientTimeline(user.patientProfile.id), getPatientAccessRequests(user.patientProfile.id), getPatientClinicalSummary(user.patientProfile.id)])
+      .then(([loadedRecords, loadedTimeline, loadedRequests, loadedClinical]) => { setRecords(loadedRecords); setTimeline(loadedTimeline); setRequests(loadedRequests); setClinical(loadedClinical) })
+    : Promise.resolve()
+  useEffect(() => { void refresh() }, [user?.patientProfile.id])
+
   const showToast = (msg: string) => {
     setToast(msg)
     setTimeout(() => setToast(null), 3500)
   }
 
-  const pending = accessRequests.filter((r) => r.status === 'Pending')
-  const reviewTarget = accessRequests.find((r) => r.id === reviewing)
+  const dashboardRequests = requests.map((r) => ({ ...r, requesterName: r.professional?.profile.name ?? 'Professional', requesterId: r.professional?.professional_id ?? '', organisation: 'Healthcare professional', information: r.scope, requestedDuration: '30 days', date: r.requested_at, status: r.status === 'pending' ? 'Pending' as const : r.status === 'approved' ? 'Granted' as const : 'Declined' as const }))
+  const pending = dashboardRequests.filter((r) => r.status === 'Pending')
+  const reviewTarget = dashboardRequests.find((r) => r.id === reviewing)
+  const activeAccess = requests.filter((r) => r.status === 'approved')
 
-  const connectedProfessionalCount = careProfessionals.filter((c) => c.access === 'Active').length
-  const connectedOrganisationCount = careOrganisations.length
+  const connectedProfessionalCount = activeAccess.length
+  const connectedOrganisationCount = new Set(records.filter((record) => record.source === 'Organisation').map((record) => record.organisation)).size
 
   return (
     <div className="space-y-6">
@@ -80,7 +89,7 @@ export default function PatientHome() {
                 <Stethoscope className="size-3.5" /> Conditions
               </p>
               <div className="mt-2 space-y-1.5">
-                {conditions.slice(0, 3).map((c) => (
+                {clinical.conditions.slice(0, 3).map((c) => (
                   <p key={c.id} className="truncate text-sm font-medium text-slate-700">
                     {c.status === 'Managed' ? (
                       <span className="text-green-600">✓ </span>
@@ -97,7 +106,7 @@ export default function PatientHome() {
                 <Pill className="size-3.5" /> Medications
               </p>
               <div className="mt-2 space-y-1.5">
-                {medications
+                {clinical.medications
                   .filter((m) => m.status === 'Active')
                   .slice(0, 3)
                   .map((m) => (
@@ -112,7 +121,7 @@ export default function PatientHome() {
                 <ShieldAlert className="size-3.5" /> Allergies
               </p>
               <div className="mt-2 space-y-1.5">
-                {allergies.slice(0, 3).map((a) => (
+                {clinical.allergies.slice(0, 3).map((a) => (
                   <p key={a.id} className="truncate text-sm font-medium text-slate-700">
                     {a.allergen}
                   </p>
@@ -135,18 +144,16 @@ export default function PatientHome() {
               </p>
             ) : (
               pending.map((r) => {
-                const prof = professionalById(r.requesterId)
                 return (
                   <div key={r.id} className="rounded-2xl p-4 ring-1 ring-slate-200">
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <p className="font-semibold text-slate-900">{r.requesterName}</p>
                         <p className="mt-0.5 text-sm text-slate-500">
-                          {prof?.profession} {prof ? '· ' : ''}
                           {r.organisation}
                         </p>
                       </div>
-                      {prof ? <VerifiedBadge verified={prof.verified} /> : null}
+                      <VerifiedBadge verified />
                     </div>
                     <p className="mt-2 rounded-lg bg-brand-50/60 px-3 py-2 text-sm text-brand-800 ring-1 ring-brand-100">
                       {r.purpose}
@@ -200,30 +207,12 @@ export default function PatientHome() {
               <span className="font-display text-lg font-bold text-slate-900">{connectedOrganisationCount}</span>
             </div>
             <ul className="space-y-1.5">
-              {careProfessionals.slice(0, 2).map((c) => {
-                const p = professionalById(c.professionalId)
-                return (
-                  <li key={c.id} className="flex items-center justify-between text-sm">
-                    <span className="truncate text-slate-600">{p?.name}</span>
-                    <Badge tone={c.access === 'Active' ? 'green' : 'amber'} className="text-[10px]">
-                      {c.access}
-                    </Badge>
-                  </li>
-                )
-              })}
-            </ul>
-            <ul className="space-y-1.5">
-              {careOrganisations.slice(0, 2).map((c) => {
-                const o = organisationById(c.organisationId)
-                return (
-                  <li key={c.id} className="flex items-center justify-between text-sm">
-                    <span className="truncate text-slate-600">{o?.name}</span>
-                    <Badge tone="green" className="text-[10px]">
-                      {c.access}
-                    </Badge>
-                  </li>
-                )
-              })}
+              {activeAccess.slice(0, 2).map((access) => (
+                <li key={access.id} className="flex items-center justify-between text-sm">
+                  <span className="truncate text-slate-600">Healthcare professional</span>
+                  <Badge tone="green" className="text-[10px]">Active</Badge>
+                </li>
+              ))}
             </ul>
           </CardContent>
         </Card>
@@ -258,9 +247,7 @@ export default function PatientHome() {
             <div>
               <p className="font-display font-bold text-slate-900">Access is visible — and yours to control</p>
               <p className="mt-0.5 text-sm text-slate-500">
-                {activeAccess.reduce((sum, a) => sum + (a.status === 'Expiring' ? 1 : 0), 0) > 0
-                  ? 'One access grant expires this week.'
-                  : `${activeAccess.length} professionals and organisations currently hold access you granted.`}
+                {`${activeAccess.length} professionals currently hold access you granted.`}
               </p>
             </div>
           </div>
@@ -309,10 +296,12 @@ export default function PatientHome() {
         onClose={() => setGranting(false)}
         granteeName={reviewTarget?.requesterName ?? ''}
         purpose={reviewTarget?.purpose ?? ''}
-        onGranted={(_info, duration) => {
+        onGranted={async (info, duration) => {
+          if (reviewTarget) await approveAccessRequest(reviewTarget.id, info, Number.parseInt(duration, 10) || 30)
+          await refresh()
           setReviewing(null)
           setGranting(false)
-          showToast(`Access granted to ${reviewTarget?.requesterName ?? 'the requester'} for ${duration}.`)
+          showToast(`Access granted for ${duration}.`)
         }}
       />
 
@@ -322,14 +311,17 @@ export default function PatientHome() {
         description="The requester will be notified and no access will be granted."
         confirmLabel="Decline request"
         danger
-        onConfirm={() => {
+        onConfirm={async () => {
+          if (declining) await rejectAccessRequest(declining)
+          await refresh()
           showToast('Access request declined.')
           setReviewing(null)
+          setDeclining(null)
         }}
         onClose={() => setDeclining(null)}
       />
 
-      <RecordDetailModal record={selectedRecord ? recordById(selectedRecord) ?? null : null} onClose={() => setSelectedRecord(null)} />
+      <RecordDetailModal record={selectedRecord ? records.find((item) => item.id === selectedRecord) ?? null : null} onClose={() => setSelectedRecord(null)} />
 
       {toast ? (
         <div className="fixed bottom-6 right-6 z-50">

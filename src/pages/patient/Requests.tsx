@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { ArrowDownLeft, ArrowUpRight } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { ArrowDownLeft } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { TabBar } from '@/components/ui/TabBar'
@@ -8,7 +8,8 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { GrantAccessModal } from '@/components/shared/GrantAccessModal'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { IdChip } from '@/components/shared/IdentityBadges'
-import { patientRequests } from '@/data/requests'
+import { approveAccessRequest, getPatientAccessRequests, rejectAccessRequest, type AccessRequestRow } from '@/lib/medoraServices'
+import { useAuth } from '@/context/AuthContext'
 import { Button } from '@/components/ui/Button'
 import { formatDate } from '@/lib/utils'
 
@@ -21,18 +22,23 @@ const statusTone: Record<string, 'amber' | 'green' | 'red' | 'navy'> = {
 }
 
 export default function Requests() {
+  const { user } = useAuth()
+  const [requests, setRequests] = useState<AccessRequestRow[]>([])
   const [tab, setTab] = useState<'Incoming' | 'Sent'>('Incoming')
   const [acceptId, setAcceptId] = useState<string | null>(null)
   const [declineId, setDeclineId] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
+
+  const refresh = () => user?.patientProfile.id ? getPatientAccessRequests(user.patientProfile.id).then(setRequests) : Promise.resolve()
+  useEffect(() => { void refresh() }, [user?.patientProfile.id])
 
   const showToast = (msg: string) => {
     setToast(msg)
     setTimeout(() => setToast(null), 3500)
   }
 
-  const list = patientRequests.filter((r) => (tab === 'Incoming' ? r.direction === 'incoming' : r.direction === 'sent'))
-  const target = patientRequests.find((r) => r.id === acceptId)
+  const list = tab === 'Incoming' ? requests : []
+  const target = requests.find((r) => r.id === acceptId)
 
   return (
     <div className="space-y-6">
@@ -49,7 +55,7 @@ export default function Requests() {
           </Card>
         ) : (
           list.map((r) => {
-            const Icon = r.direction === 'incoming' ? ArrowDownLeft : ArrowUpRight
+            const Icon = ArrowDownLeft
             return (
               <Card key={r.id}>
                 <CardContent className="flex flex-col gap-3 p-5 sm:flex-row sm:items-start">
@@ -58,19 +64,19 @@ export default function Requests() {
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <p className="font-semibold text-slate-900">{r.person}</p>
-                      <IdChip id={r.personId} />
-                      <span className="text-sm text-slate-400">· {r.organisation}</span>
+                      <p className="font-semibold text-slate-900">{r.professional?.profile.name ?? 'Professional'}</p>
+                      <IdChip id={r.professional?.professional_id ?? ''} />
+                      <span className="text-sm text-slate-400">· Healthcare professional</span>
                     </div>
                     <p className="mt-1 text-sm text-slate-600">{r.purpose}</p>
                     <p className="mt-0.5 text-xs text-slate-400">
-                      {r.information} · {formatDate(r.date)}
+                      {r.scope.join(', ')} · {formatDate(r.requested_at)}
                     </p>
                     <div className="mt-3 flex flex-wrap items-center gap-2.5">
-                      <Badge tone={statusTone[r.status]} dot>
+                      <Badge tone={statusTone[r.status === 'pending' ? 'Pending' : r.status === 'approved' ? 'Accepted' : r.status === 'rejected' ? 'Declined' : r.status]} dot>
                         {r.status}
                       </Badge>
-                      {r.status === 'Pending' && r.direction === 'incoming' ? (
+                      {r.status === 'pending' ? (
                         <div className="flex gap-2">
                           <Button size="sm" variant="outline" onClick={() => setDeclineId(r.id)}>
                             Decline
@@ -92,11 +98,13 @@ export default function Requests() {
       <GrantAccessModal
         open={Boolean(target)}
         onClose={() => setAcceptId(null)}
-        granteeName={target?.person ?? ''}
+        granteeName={target?.professional?.profile.name ?? ''}
         purpose={target?.purpose ?? ''}
-        onGranted={(_info, duration) => {
+        onGranted={async (info, duration) => {
+          if (target) await approveAccessRequest(target.id, info, Number.parseInt(duration, 10) || 30)
+          await refresh()
           setAcceptId(null)
-          showToast(`Access granted to ${target?.person ?? 'requester'} for ${duration}.`)
+          showToast(`Access granted for ${duration}.`)
         }}
       />
 
@@ -105,7 +113,12 @@ export default function Requests() {
         title="Decline this request?"
         confirmLabel="Decline"
         danger
-        onConfirm={() => showToast('Request declined.')}
+        onConfirm={async () => {
+          if (declineId) await rejectAccessRequest(declineId)
+          await refresh()
+          setDeclineId(null)
+          showToast('Request declined.')
+        }}
         onClose={() => setDeclineId(null)}
       />
 

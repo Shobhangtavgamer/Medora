@@ -4,6 +4,8 @@ import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Field, Input, Select, Textarea } from '@/components/ui/Field'
 import { Badge } from '@/components/ui/Badge'
+import { createPatientRecord } from '@/lib/medoraServices'
+import type { RecordType } from '@/data/records'
 
 type Method = 'upload' | 'enter'
 type Step = 'method' | 'form' | 'review'
@@ -15,10 +17,14 @@ export function AddRecordModal({
 }: {
   open: boolean
   onClose: () => void
-  onSaved: (note: string) => void
+  onSaved: (note: string) => void | Promise<void>
 }) {
   const [step, setStep] = useState<Step>('method')
   const [method, setMethod] = useState<Method>('upload')
+  const [title, setTitle] = useState('')
+  const [date, setDate] = useState('')
+  const [recordType, setRecordType] = useState<RecordType>('Other')
+  const [summary, setSummary] = useState('')
 
   const extracted = {
     title: 'Blood pressure readings — home monitoring log',
@@ -31,7 +37,16 @@ export function AddRecordModal({
 
   const reset = () => {
     setStep('method')
+    setTitle('')
+    setDate('')
+    setSummary('')
     onClose()
+  }
+
+  const save = async () => {
+    await createPatientRecord({ recordType, title: title || extracted.title, description: summary || extracted.summary, recordDate: date || extracted.date })
+    await onSaved('Record added to your health record.')
+    reset()
   }
 
   return (
@@ -53,7 +68,7 @@ export function AddRecordModal({
             </Button>
           ) : null}
           {step === 'review' ? (
-            <Button onClick={() => onSaved('Record added to your health record.')}>Save record</Button>
+            <Button onClick={() => void save()}>Save record</Button>
           ) : null}
         </div>
       }
@@ -103,8 +118,8 @@ export function AddRecordModal({
                 Choose file
               </Button>
             </div>
-            <Field label="Record type" required>
-              <Select id="type" defaultValue="Other">
+              <Field label="Record type" required>
+              <Select id="type" value={recordType} onChange={(event) => setRecordType(event.target.value as RecordType)}>
                 <option>Consultation</option>
                 <option>Investigation</option>
                 <option>Prescription</option>
@@ -117,18 +132,18 @@ export function AddRecordModal({
         ) : (
           <div className="space-y-5">
             <Field label="Title" required>
-              <Input id="title" placeholder="e.g. Home blood pressure log" />
+              <Input id="title" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="e.g. Home blood pressure log" />
             </Field>
             <div className="grid gap-5 sm:grid-cols-2">
               <Field label="Date" required>
-                <Input id="date" type="date" />
+                <Input id="date" type="date" value={date} onChange={(event) => setDate(event.target.value)} />
               </Field>
               <Field label="Organisation" hint="Clinic, lab, or self-entered">
                 <Input id="org" placeholder="e.g. Self-entered" defaultValue="Self-entered" />
               </Field>
             </div>
             <Field label="Summary" required>
-              <Textarea id="summary" rows={4} placeholder="What does this record show?" />
+              <Textarea id="summary" rows={4} value={summary} onChange={(event) => setSummary(event.target.value)} placeholder="What does this record show?" />
             </Field>
           </div>
         )
@@ -141,18 +156,18 @@ export function AddRecordModal({
             </p>
           </div>
           <Field label="Title">
-            <Input id="title" defaultValue={extracted.title} />
+            <Input id="title" value={title || extracted.title} onChange={(event) => setTitle(event.target.value)} />
           </Field>
           <div className="grid gap-5 sm:grid-cols-2">
             <Field label="Date">
-              <Input id="date" type="date" defaultValue={extracted.date} />
+              <Input id="date" type="date" value={date || extracted.date} onChange={(event) => setDate(event.target.value)} />
             </Field>
             <Field label="Organisation">
               <Input id="org" defaultValue={extracted.organisation} />
             </Field>
           </div>
           <Field label="Summary">
-            <Textarea id="summary" rows={4} defaultValue={extracted.summary} />
+            <Textarea id="summary" rows={4} value={summary || extracted.summary} onChange={(event) => setSummary(event.target.value)} />
           </Field>
           <div className="flex flex-wrap gap-2">
             <Badge tone="brand">AI extraction</Badge>

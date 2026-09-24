@@ -26,7 +26,7 @@ function UserCircleIcon(props: { className?: string }) {
 
 export default function Register() {
   const navigate = useNavigate()
-  const { signIn } = useAuth()
+  const { signUp } = useAuth()
   const [show, setShow] = useState(false)
   const [confirmShow, setConfirmShow] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -35,15 +35,22 @@ export default function Register() {
   const [baseRole, setBaseRole] = useState<Workspace>('patient')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
+  const [error, setError] = useState<string | null>(null)
 
-  const onSubmit = (e: FormEvent<HTMLFormElement>) => {
+  const onSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
+    setError(null)
     setLoading(true)
-    setTimeout(() => {
-      const workspace: Workspace = intended === 'professional' ? 'professional' : intended === 'both' ? baseRole : 'patient'
-      signIn({ email: 'ava.thompson@example.com' })
-      navigate(workspace === 'professional' ? '/professional' : '/patient')
-    }, 900)
+    const form = new FormData(e.currentTarget)
+    const workspace: Workspace = intended === 'professional' ? 'professional' : intended === 'both' ? baseRole : 'patient'
+    try {
+      await signUp({ email: String(form.get('email')), password, name: String(form.get('name')), role: workspace })
+      navigate('/login')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to create the account.')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -53,17 +60,19 @@ export default function Register() {
     >
       <form className="space-y-5" onSubmit={onSubmit}>
         <Field label="Full name" required>
-          <Input id="name" placeholder="Ava Thompson" autoComplete="name" required />
+          <Input id="name" name="name" placeholder="Ava Thompson" autoComplete="name" required />
         </Field>
 
         <div className="grid gap-5 sm:grid-cols-2">
           <Field label="Email address" required>
-            <Input id="email" type="email" placeholder="you@example.com" autoComplete="email" required />
+            <Input id="email" name="email" type="email" placeholder="you@example.com" autoComplete="email" required />
           </Field>
           <Field label="Mobile number" required>
             <Input id="mobile" type="tel" placeholder="+91 XXXXX XXXXX" autoComplete="tel" required />
           </Field>
         </div>
+
+        {error ? <p className="text-sm text-red-600" role="alert">{error}</p> : null}
 
         <Field label="How will you use the platform?" required>
           <div className="grid gap-3 sm:grid-cols-3">

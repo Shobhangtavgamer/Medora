@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Link, NavLink, Outlet } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { Link, NavLink, Outlet, Navigate } from 'react-router-dom'
 import { Bell, Menu, Search, X } from 'lucide-react'
 import { Logo } from '@/components/Logo'
 import { Avatar } from '@/components/ui/Avatar'
@@ -7,14 +7,20 @@ import { AccountMenu } from '@/components/shared/AccountMenu'
 import { IdChip } from '@/components/shared/IdentityBadges'
 import { useAuth, type Workspace } from '@/context/AuthContext'
 import { navByRole, workspaceMeta } from '@/navigation'
-import { unreadCount } from '@/data/notifications'
+import { getUnreadNotificationCount } from '@/lib/medoraServices'
 import { cn } from '@/lib/utils'
 
 export function WorkspaceLayout({ role }: { role: Workspace }) {
-  const { user } = useAuth()
+  const { user, loading } = useAuth()
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [unread, setUnread] = useState(0)
   const meta = workspaceMeta[role]
   const nav = navByRole[role]
+  useEffect(() => { void getUnreadNotificationCount().then(setUnread).catch(() => setUnread(0)) }, [role])
+
+  if (loading) return <div className="min-h-screen bg-slate-50" />
+  if (!user) return <Navigate to="/login" replace />
+  if (!user.availableWorkspaces.includes(role)) return <Navigate to={`/${user.role}`} replace />
 
   const activeCaption = user
     ? role === 'patient'
@@ -65,9 +71,9 @@ export function WorkspaceLayout({ role }: { role: Workspace }) {
                   )}
                 />
                 {label}
-                {to.endsWith('/notifications') && unreadCount(role) > 0 ? (
+                {to.endsWith('/notifications') && unread > 0 ? (
                   <span className="ml-auto flex size-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
-                    {unreadCount(role)}
+                    {unread}
                   </span>
                 ) : null}
               </>
@@ -136,9 +142,9 @@ export function WorkspaceLayout({ role }: { role: Workspace }) {
               aria-label="Notifications"
             >
               <Bell className="size-5" />
-              {unreadCount(role) > 0 ? (
+              {unread > 0 ? (
                 <span className="absolute right-1.5 top-1.5 flex size-4.5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white ring-2 ring-white">
-                  {unreadCount(role)}
+                  {unread}
                 </span>
               ) : null}
             </Link>

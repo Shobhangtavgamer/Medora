@@ -11,14 +11,21 @@ export default function Login() {
   const { signIn } = useAuth()
   const [show, setShow] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  const onSubmit = (e: FormEvent<HTMLFormElement>) => {
+  const onSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
+    setError(null)
     setLoading(true)
-    setTimeout(() => {
-      signIn({ email: 'ava.thompson@example.com', workspace: 'patient' })
-      navigate('/patient')
-    }, 900)
+    const form = new FormData(e.currentTarget)
+    try {
+      const role = await signIn({ email: String(form.get('identifier')), password: String(form.get('password')) })
+      navigate(`/${role}`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to sign in.')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -30,6 +37,7 @@ export default function Login() {
         <Field label="Email or mobile number" required hint="The identifier you used to register.">
           <Input
             id="identifier"
+            name="identifier"
             defaultValue="ava.thompson@example.com"
             placeholder="you@example.com or +91 XXXXX XXXXX"
             autoComplete="username"
@@ -41,6 +49,7 @@ export default function Login() {
           <div className="relative">
             <Input
               id="password"
+              name="password"
               type={show ? 'text' : 'password'}
               placeholder="••••••••"
               autoComplete="current-password"
@@ -64,6 +73,8 @@ export default function Login() {
           </Link>
         </div>
 
+        {error ? <p className="text-sm text-red-600" role="alert">{error}</p> : null}
+
         <Button type="submit" size="lg" fullWidth loading={loading}>
           Sign in
         </Button>
@@ -75,8 +86,7 @@ export default function Login() {
           Demo account
         </p>
         <p className="mt-1">
-          Use any email or mobile number — this is a frontend-only prototype. Your organisation workspace is XYZ
-          Hospital (ORG-74PQ20), your professional profile is with Sharma Medical Clinic.
+          Use an email and password for a Supabase account configured in the Medora project.
         </p>
       </div>
 

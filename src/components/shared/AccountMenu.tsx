@@ -58,7 +58,7 @@ export function AccountMenu() {
           <p className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-widest text-slate-400">
             Switch workspace
           </p>
-          {(['patient', 'professional', 'organisation'] as Workspace[]).map((w) => {
+          {user.availableWorkspaces.map((w) => {
             const Icon = workspaceIcon[w]
             const label =
               w === 'patient' ? 'Patient profile' : w === 'professional' ? 'Professional profile' : 'Organisation'

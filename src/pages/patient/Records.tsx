@@ -1,11 +1,13 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { FilePlus2, ShieldCheck } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { EmptyState, Toast } from '@/components/ui/Feedback'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { RecordCard, RecordDetailModal } from '@/components/shared/Record'
 import { AddRecordModal } from '@/components/shared/AddRecordModal'
-import { patientRecords, recordById, type RecordType } from '@/data/records'
+import { type RecordItem, type RecordType } from '@/data/records'
+import { getPatientRecords } from '@/lib/medoraServices'
+import { useAuth } from '@/context/AuthContext'
 import { cn } from '@/lib/utils'
 
 const filters: { label: string; types: RecordType[] | null }[] = [
@@ -20,11 +22,28 @@ const filters: { label: string; types: RecordType[] | null }[] = [
 ]
 
 export default function PatientRecords() {
+  const { user } = useAuth()
+  const [patientRecords, setPatientRecords] = useState<RecordItem[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [filter, setFilter] = useState('All')
   const [record, setRecord] = useState<string | null>(null)
   const [addOpen, setAddOpen] = useState(false)
   const [source, setSource] = useState<'All' | 'Organisation' | 'Patient'>('All')
   const [toast, setToast] = useState<string | null>(null)
+
+  const refreshRecords = async () => {
+    if (!user?.patientProfile.id) return
+    setPatientRecords(await getPatientRecords(user.patientProfile.id))
+  }
+
+  useEffect(() => {
+    if (!user?.patientProfile.id) return
+    void getPatientRecords(user.patientProfile.id)
+      .then(setPatientRecords)
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : 'Unable to load records.'))
+      .finally(() => setLoading(false))
+  }, [user?.patientProfile.id])
 
   const showToast = (msg: string) => {
     setToast(msg)
@@ -91,7 +110,7 @@ export default function PatientRecords() {
         </div>
       </div>
 
-      {list.length === 0 ? (
+      {loading ? <p className="text-sm text-slate-500">Loading records…</p> : error ? <p className="text-sm text-red-600" role="alert">{error}</p> : list.length === 0 ? (
         <EmptyState
           title="No records of this type"
           description="Try a different filter, or add an old or external record yourself."
@@ -116,10 +135,11 @@ export default function PatientRecords() {
         onSaved={(note) => {
           setAddOpen(false)
           showToast(note)
+          void refreshRecords()
         }}
       />
 
-      <RecordDetailModal record={record ? recordById(record) ?? null : null} onClose={() => setRecord(null)} />
+      <RecordDetailModal record={record ? patientRecords.find((item) => item.id === record) ?? null : null} onClose={() => setRecord(null)} />
 
       {toast ? (
         <div className="fixed bottom-6 right-6 z-50">

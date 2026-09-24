@@ -1,14 +1,18 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { CheckCircle2, FileText, PencilRuler, Send } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Toast } from '@/components/ui/Feedback'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { Modal } from '@/components/ui/Modal'
+import { Field, Input, Select, Textarea } from '@/components/ui/Field'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { IdChip } from '@/components/shared/IdentityBadges'
-import { orgWorkflowRecords, orgWorkflowTone, type OrgWorkflowRecord } from '@/data/org'
+import { orgWorkflowTone, type OrgWorkflowRecord } from '@/data/org'
 import { formatDate } from '@/lib/utils'
+import { createOrganisationRecord, getOrganisationRecords, publishOrganisationRecord } from '@/lib/medoraServices'
+import { useAuth } from '@/context/AuthContext'
 
 const statusFilter = ['All', 'Draft', 'Pending', 'Published', 'Correction'] as const
 
@@ -54,23 +58,37 @@ function RecordActions({ r, onPublish, onRequestCorrection }: { r: OrgWorkflowRe
 }
 
 export default function Records() {
+  const { user } = useAuth()
+  const [records, setRecords] = useState<OrgWorkflowRecord[]>([])
+  const [error, setError] = useState<string | null>(null)
   const [filter, setFilter] = useState<(typeof statusFilter)[number]>('All')
   const [toast, setToast] = useState<string | null>(null)
   const [action, setAction] = useState<'publish' | 'correction' | null>(null)
   const [target, setTarget] = useState<OrgWorkflowRecord | null>(null)
+  const [createOpen, setCreateOpen] = useState(false)
+  const [patientId, setPatientId] = useState('')
+  const [professionalId, setProfessionalId] = useState('')
+  const [recordType, setRecordType] = useState<'Consultation' | 'Investigation' | 'Prescription' | 'Report'>('Consultation')
+  const [title, setTitle] = useState('')
+  const [description, setDescription] = useState('')
+  const [recordDate, setRecordDate] = useState(new Date().toISOString().slice(0, 10))
+  const refresh = () => user?.organisationProfile.id
+    ? getOrganisationRecords(user.organisationProfile.id).then(setRecords).catch((err: unknown) => setError(err instanceof Error ? err.message : 'Unable to load organisation records.'))
+    : Promise.resolve()
+  useEffect(() => { void refresh() }, [user?.organisationProfile.id])
   const showToast = (msg: string) => {
     setToast(msg)
     setTimeout(() => setToast(null), 3500)
   }
 
-  const list = orgWorkflowRecords.filter((r) => filter === 'All' || r.status === filter)
+  const list = records.filter((r) => filter === 'All' || r.status === filter)
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Records"
         description="Organisation record workflow — from draft through publication to patient records."
-      />
+      ><Button onClick={() => setCreateOpen(true)}><FileText className="size-4" />Create record</Button></PageHeader>
 
       <div className="flex flex-wrap gap-2">
         {statusFilter.map((s) => (
@@ -87,6 +105,7 @@ export default function Records() {
         ))}
       </div>
 
+      {error ? <p className="text-sm text-red-600" role="alert">{error}</p> : null}
       <div className="space-y-3">
         {list.map((r) => (
           <Card key={r.id}>
@@ -124,6 +143,18 @@ export default function Records() {
         ))}
       </div>
 
+      <Modal open={createOpen} onClose={() => setCreateOpen(false)} title="Create formal record" description="This record will enter the organisation workflow and can then be published to the patient.">
+        <div className="space-y-4">
+          <Field label="Patient ID" required><Input value={patientId} onChange={(event) => setPatientId(event.target.value)} placeholder="PAT-RAHUL01" /></Field>
+          <Field label="Professional ID"><Input value={professionalId} onChange={(event) => setProfessionalId(event.target.value)} placeholder="HCP-MEHTA01" /></Field>
+          <Field label="Record type" required><Select value={recordType} onChange={(event) => setRecordType(event.target.value as typeof recordType)}><option>Consultation</option><option>Investigation</option><option>Prescription</option><option>Report</option></Select></Field>
+          <Field label="Title" required><Input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Blood pressure review" /></Field>
+          <Field label="Record date" required><Input type="date" value={recordDate} onChange={(event) => setRecordDate(event.target.value)} /></Field>
+          <Field label="Description" required><Textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={4} placeholder="Clinical information for the formal record" /></Field>
+          <div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={async () => { if (!user?.organisationProfile.id) return; await createOrganisationRecord({ patientId, professionalId: professionalId || undefined, organisationId: user.organisationProfile.id, recordType, title, description, recordDate }); await refresh(); setCreateOpen(false); showToast('Record created and awaiting publication.') }}>Create record</Button></div>
+        </div>
+      </Modal>
+
       <ConfirmDialog
         open={Boolean(target && action === 'publish')}
         title={target?.status === 'Pending' || target?.status === 'Correction' ? 'Publish this record?' : 'Submit for review?'}
@@ -133,7 +164,9 @@ export default function Records() {
             : 'This draft will be routed to the department head for approval before publication.'
         }
         confirmLabel={target?.status === 'Draft' ? 'Submit for review' : 'Publish'}
-        onConfirm={() => {
+        onConfirm={async () => {
+          if (target && action === 'publish' && target.status !== 'Draft') await publishOrganisationRecord(target.id)
+          await refresh()
           setTarget(null)
           setAction(null)
           showToast('Record published to the patient record.')

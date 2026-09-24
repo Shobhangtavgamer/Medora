@@ -8,16 +8,23 @@ import { useAuth } from '@/context/AuthContext'
 
 export default function RegisterOrganisation() {
   const navigate = useNavigate()
-  const { signIn } = useAuth()
+  const { signUp } = useAuth()
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  const onSubmit = (e: FormEvent<HTMLFormElement>) => {
+  const onSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
+    setError(null)
     setLoading(true)
-    setTimeout(() => {
-      signIn({ email: 'records@xyzhospital.org', workspace: 'organisation' })
-      navigate('/organisation')
-    }, 900)
+    const form = new FormData(e.currentTarget)
+    try {
+      await signUp({ email: String(form.get('email')), password: String(form.get('password')), name: String(form.get('orgName')), role: 'organisation' })
+      navigate('/login')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to create the organisation account.')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -27,7 +34,7 @@ export default function RegisterOrganisation() {
     >
       <form className="space-y-5" onSubmit={onSubmit}>
         <Field label="Organisation name" required>
-          <Input id="orgName" placeholder="XYZ Hospital" autoComplete="organization" required />
+          <Input id="orgName" name="orgName" placeholder="XYZ Hospital" autoComplete="organization" required />
         </Field>
 
         <div className="grid gap-5 sm:grid-cols-2">
@@ -54,7 +61,7 @@ export default function RegisterOrganisation() {
 
         <div className="grid gap-5 sm:grid-cols-2">
           <Field label="Work email" required>
-            <Input id="email" type="email" placeholder="records@organisation.org" autoComplete="email" required />
+            <Input id="email" name="email" type="email" placeholder="records@organisation.org" autoComplete="email" required />
           </Field>
           <Field label="Phone" required>
             <Input id="phone" type="tel" placeholder="+91 XXXXX XXXXX" autoComplete="tel" required />
@@ -69,7 +76,7 @@ export default function RegisterOrganisation() {
         </Field>
 
         <Field label="Password" required hint="At least 8 characters with a number.">
-          <Input id="password" type="password" placeholder="Create a strong password" autoComplete="new-password" required />
+          <Input id="password" name="password" type="password" placeholder="Create a strong password" autoComplete="new-password" required />
         </Field>
 
         <Checkbox
@@ -81,6 +88,8 @@ export default function RegisterOrganisation() {
           }
           required
         />
+
+        {error ? <p className="text-sm text-red-600" role="alert">{error}</p> : null}
 
         <Button type="submit" size="lg" fullWidth loading={loading}>
           <Building2 className="size-4.5" />

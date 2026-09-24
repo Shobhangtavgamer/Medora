@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ShieldCheck, UserCheck } from 'lucide-react'
 import { Card, CardContent, CardHeader } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
@@ -9,25 +9,35 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { GrantAccessModal } from '@/components/shared/GrantAccessModal'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { IdChip } from '@/components/shared/IdentityBadges'
-import { activeAccess, accessRequests, consentHistory } from '@/data/access'
+import { approveAccessRequest, getPatientAccessRequests, rejectAccessRequest, revokeAccess, type AccessRequestRow } from '@/lib/medoraServices'
+import { useAuth } from '@/context/AuthContext'
 import { formatDate } from '@/lib/utils'
 
 type Tab = 'Active Access' | 'Requests' | 'History'
 
 export default function Access() {
+  const { user } = useAuth()
+  const [requests, setRequests] = useState<AccessRequestRow[]>([])
+  const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<Tab>('Active Access')
   const [toast, setToast] = useState<string | null>(null)
   const [grantingId, setGrantingId] = useState<string | null>(null)
   const [decliningId, setDecliningId] = useState<string | null>(null)
   const [revokingId, setRevokingId] = useState<string | null>(null)
 
+  const refresh = () => user?.patientProfile.id
+    ? getPatientAccessRequests(user.patientProfile.id).then(setRequests).finally(() => setLoading(false))
+    : Promise.resolve()
+  useEffect(() => { void refresh() }, [user?.patientProfile.id])
+
   const showToast = (msg: string) => {
     setToast(msg)
     setTimeout(() => setToast(null), 3500)
   }
 
-  const granting = accessRequests.find((r) => r.id === grantingId)
-  const pending = accessRequests.filter((r) => r.status === 'Pending')
+  const granting = requests.find((r) => r.id === grantingId)
+  const pending = requests.filter((r) => r.status === 'pending')
+  const active = requests.filter((r) => r.status === 'approved' && r.expires_at && new Date(r.expires_at) > new Date())
 
   return (
     <div className="space-y-6">
@@ -40,15 +50,15 @@ export default function Access() {
 
       {tab === 'Active Access' ? (
         <div className="space-y-4">
-          {activeAccess.length === 0 ? (
+          {loading ? <p className="text-sm text-slate-500">Loading access…</p> : active.length === 0 ? (
             <Card>
               <CardContent className="py-12 text-center text-sm text-slate-500">
                 No active access grants.
               </CardContent>
             </Card>
           ) : (
-            activeAccess.map((a) => (
-              <Card key={a.id} className={a.status === 'Expiring' ? 'ring-amber-200' : undefined}>
+            active.map((a) => (
+              <Card key={a.id}>
                 <CardContent className="flex flex-col gap-4 p-5 lg:flex-row lg:items-center lg:justify-between">
                   <div className="flex items-start gap-4">
                     <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600 ring-1 ring-brand-100">
@@ -56,13 +66,12 @@ export default function Access() {
                     </span>
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
-                        <p className="font-semibold text-slate-900">{a.granteeName}</p>
-                        <IdChip id={a.granteeId} />
-                        <Badge tone={a.status === 'Expiring' ? 'amber' : 'green'}>
-                          {a.status === 'Expiring' ? 'Expiring soon' : 'Active'}
+                        <p className="font-semibold text-slate-900">{a.professional?.profile.name}</p>
+                        <IdChip id={a.professional?.professional_id ?? ''} />
+                        <Badge tone="green">Active
                         </Badge>
                       </div>
-                      <p className="mt-0.5 text-sm text-slate-500">{a.organisation}</p>
+                      <p className="mt-0.5 text-sm text-slate-500">{a.professional?.memberships?.[0]?.organisation.name ?? 'Healthcare professional'}</p>
                       <p className="mt-2 text-sm text-slate-600">
                         <span className="font-semibold text-slate-800">Purpose:</span> {a.purpose}
                       </p>
@@ -70,7 +79,7 @@ export default function Access() {
                         <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">
                           Information:
                         </span>
-                        {a.information.map((i) => (
+                        {a.scope.map((i) => (
                           <Badge key={i} tone="slate" className="text-[10px]">
                             {i}
                           </Badge>
@@ -80,8 +89,8 @@ export default function Access() {
                   </div>
                   <div className="flex shrink-0 flex-col items-start gap-1.5 text-sm lg:items-end">
                     <p className="text-slate-500">
-                      Grants {formatDate(a.grantedAt)} ·{' '}
-                      <span className="font-semibold text-slate-800">Expires {formatDate(a.expiresAt)}</span>
+                      Grants {formatDate(a.approved_at ?? a.requested_at)} ·{' '}
+                      <span className="font-semibold text-slate-800">Expires {formatDate(a.expires_at ?? '')}</span>
                     </p>
                     <Button
                       size="sm"
@@ -109,23 +118,23 @@ export default function Access() {
             pending.map((r) => (
               <Card key={r.id}>
                 <CardHeader
-                  title={`${r.requesterName} — ${r.organisation}`}
+                  title={`${r.professional?.profile.name ?? 'Professional'} — ${r.professional?.memberships?.[0]?.organisation.name ?? 'Organisation'}`}
                   description={r.purpose}
                   icon={<UserCheck className="size-5" />}
-                  action={<Badge tone="amber">Requested {formatDate(r.date)}</Badge>}
+                  action={<Badge tone="amber">Requested {formatDate(r.requested_at)}</Badge>}
                 />
                 <CardContent className="space-y-4">
                   <div className="flex flex-wrap gap-2">
                     <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">
                       Information requested:
                     </span>
-                    {r.information.map((i) => (
+                    {r.scope.map((i) => (
                       <Badge key={i} tone="slate" className="text-[10px]">
                         {i}
                       </Badge>
                     ))}
                     <Badge tone="navy" className="text-[10px]">
-                      Duration: {r.requestedDuration}
+                      Duration: 30 days
                     </Badge>
                   </div>
                   <div className="flex flex-wrap gap-3">
@@ -145,19 +154,17 @@ export default function Access() {
 
       {tab === 'History' ? (
         <div className="space-y-3">
-          {consentHistory.map((h) => (
+          {requests.filter((r) => r.status !== 'pending').map((h) => (
             <Card key={h.id}>
               <CardContent className="flex items-start justify-between gap-4 p-5">
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <p className="font-semibold text-slate-900">{h.entity}</p>
-                    <Badge tone={h.action.startsWith('Access granted') || h.action.includes('shared') ? 'green' : 'red'}>
-                      {h.action}
-                    </Badge>
+                    <p className="font-semibold text-slate-900">{h.professional?.profile.name ?? 'Professional'}</p>
+                    <Badge tone={h.status === 'approved' ? 'green' : 'red'}>{h.status}</Badge>
                   </div>
-                  <p className="mt-1 text-sm text-slate-600">{h.details}</p>
+                  <p className="mt-1 text-sm text-slate-600">{h.purpose} · {h.scope.join(', ')}</p>
                 </div>
-                <span className="shrink-0 text-sm text-slate-400">{formatDate(h.date)}</span>
+                <span className="shrink-0 text-sm text-slate-400">{formatDate(h.approved_at ?? h.requested_at)}</span>
               </CardContent>
             </Card>
           ))}
@@ -167,11 +174,13 @@ export default function Access() {
       <GrantAccessModal
         open={Boolean(granting)}
         onClose={() => setGrantingId(null)}
-        granteeName={granting?.requesterName ?? ''}
+        granteeName={granting?.professional?.profile.name ?? ''}
         purpose={granting?.purpose ?? ''}
-        onGranted={(_info, duration) => {
+        onGranted={async (info, duration) => {
+          if (granting) await approveAccessRequest(granting.id, info, Number.parseInt(duration, 10) || 30)
+          await refresh()
           setGrantingId(null)
-          showToast(`Access granted to ${granting?.requesterName ?? 'requester'} for ${duration}.`)
+          showToast(`Access granted for ${duration}.`)
         }}
       />
 
@@ -180,7 +189,12 @@ export default function Access() {
         title="Decline this access request?"
         confirmLabel="Decline request"
         danger
-        onConfirm={() => showToast('Access request declined.')}
+        onConfirm={async () => {
+          if (decliningId) await rejectAccessRequest(decliningId)
+          await refresh()
+          setDecliningId(null)
+          showToast('Access request declined.')
+        }}
         onClose={() => setDecliningId(null)}
       />
       <ConfirmDialog
@@ -189,7 +203,12 @@ export default function Access() {
         description="The professional will lose access to the granted information immediately."
         confirmLabel="Revoke access"
         danger
-        onConfirm={() => showToast('Access revoked and recorded in history.')}
+        onConfirm={async () => {
+          if (revokingId) await revokeAccess(revokingId)
+          await refresh()
+          setRevokingId(null)
+          showToast('Access revoked and recorded in history.')
+        }}
         onClose={() => setRevokingId(null)}
       />
 

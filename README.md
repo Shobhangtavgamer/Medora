@@ -73,3 +73,18 @@ src/
 
 - Path alias `@/*` → `./src/*` is configured in `vite.config` / `tsconfig`.
 - Lint uses Oxlint (`.oxlintrc`); only non-blocking warnings are expected.
+
+## Supabase backend
+
+The application now includes a small Supabase data layer and migration under `supabase/migrations/001_medora_core.sql`.
+
+1. Create a Supabase project.
+2. Add `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` to `.env.local` using `.env.example`.
+3. Run the migration in the Supabase SQL editor.
+4. Create three email/password users in Supabase Authentication: `rahul@example.com`, `mehta@example.com`, and `xyz@example.com`.
+5. Run `supabase/seed.sql` to create the Rahul/Dr. Mehta/XYZ Hospital demo records and pending access request.
+6. Run `npm run dev` and use the three Auth users to exercise the consent and publication flow.
+
+After the initial migration, also run `supabase/002_communication.sql`, `supabase/003_profile_memberships.sql`, and `supabase/004_patient_records.sql` in that order. For a demo project, disable **Confirm email** under Authentication settings or create users with **Auto Confirm User** enabled.
+
+Only the anon key belongs in the Vite client. Never expose a Supabase service-role key as a `NEXT_PUBLIC_*` variable.

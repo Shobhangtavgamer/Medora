@@ -1,9 +1,14 @@
+import { useEffect, useState } from 'react'
 import { ShieldAlert } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { PageHeader } from '@/components/shared/PageHeader'
-import { allergies } from '@/data/health'
+import { getPatientClinicalSummary } from '@/lib/medoraServices'
+import { useAuth } from '@/context/AuthContext'
 
 export default function MyHealthAllergies() {
+  const { user } = useAuth()
+  const [allergies, setAllergies] = useState<Awaited<ReturnType<typeof getPatientClinicalSummary>>['allergies']>([])
+  useEffect(() => { if (user?.patientProfile.id) void getPatientClinicalSummary(user.patientProfile.id).then((summary) => setAllergies(summary.allergies)) }, [user?.patientProfile.id])
   return (
     <div className="space-y-5">
       <PageHeader title="Allergies" description="Allergen, reaction and source." />
@@ -19,12 +24,12 @@ export default function MyHealthAllergies() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {allergies.map((a) => (
+              {allergies.length === 0 ? <tr><td colSpan={4} className="px-5 py-12 text-center text-slate-500">No allergies recorded.</td></tr> : allergies.map((a) => (
                 <tr key={a.id}>
                   <td className="px-5 py-4 font-semibold text-slate-900">{a.allergen}</td>
                   <td className="px-5 py-4 text-slate-600">{a.reaction}</td>
                   <td className="px-5 py-4">
-                    <Badge tone={a.severity === 'Severe' ? 'red' : a.severity === 'Moderate' ? 'amber' : 'slate'}>
+                    <Badge tone="slate">
                       {a.severity}
                     </Badge>
                   </td>

@@ -1,9 +1,14 @@
+import { useEffect, useState } from 'react'
 import { Pill } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { PageHeader } from '@/components/shared/PageHeader'
-import { medications } from '@/data/health'
+import { getPatientClinicalSummary } from '@/lib/medoraServices'
+import { useAuth } from '@/context/AuthContext'
 
 export default function MyHealthMedications() {
+  const { user } = useAuth()
+  const [medications, setMedications] = useState<Awaited<ReturnType<typeof getPatientClinicalSummary>>['medications']>([])
+  useEffect(() => { if (user?.patientProfile.id) void getPatientClinicalSummary(user.patientProfile.id).then((summary) => setMedications(summary.medications)) }, [user?.patientProfile.id])
   return (
     <div className="space-y-5">
       <PageHeader title="Medications" description="Medicine, dosage, frequency, status and source." />
@@ -20,7 +25,7 @@ export default function MyHealthMedications() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {medications.map((m) => (
+              {medications.length === 0 ? <tr><td colSpan={5} className="px-5 py-12 text-center text-slate-500">No medications recorded.</td></tr> : medications.map((m) => (
                 <tr key={m.id}>
                   <td className="px-5 py-4 font-semibold text-slate-900">{m.name}</td>
                   <td className="px-5 py-4 text-slate-600">{m.dosage}</td>

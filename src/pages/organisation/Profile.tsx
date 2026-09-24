@@ -6,7 +6,6 @@ import { Field, Input, Checkbox } from '@/components/ui/Field'
 import { Toast } from '@/components/ui/Feedback'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { IdChip, VerifiedBadge } from '@/components/shared/IdentityBadges'
-import { organisations } from '@/data/organisations'
 import { useAuth } from '@/context/AuthContext'
 
 export default function Profile() {
@@ -17,12 +16,11 @@ export default function Profile() {
     setTimeout(() => setToast(null), 3500)
   }
 
-  const org = organisations.find((o) => o.id === 'ORG-74PQ20')
   const [home, setHome] = useState({
-    name: org?.name ?? '',
-    email: org?.email ?? '',
-    phone: org?.phone ?? '',
-    address: org?.address ?? '',
+    name: user?.organisationProfile.name ?? '',
+    email: user?.email ?? '',
+    phone: user?.mobile ?? '',
+    address: '',
   })
 
   return (
@@ -31,14 +29,14 @@ export default function Profile() {
 
       <div className="flex items-center gap-4 rounded-2xl bg-gradient-to-r from-navy-700 to-brand-600 p-6 text-white shadow-soft">
         <span className="flex size-16 items-center justify-center rounded-2xl bg-white/15 text-2xl font-bold ring-1 ring-white/25">
-          {org?.name.charAt(0)}
+          {user?.organisationProfile.name.charAt(0)}
         </span>
         <div>
-          <p className="text-lg font-bold">{org?.name}</p>
+          <p className="text-lg font-bold">{user?.organisationProfile.name}</p>
           <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-white/85">
             <IdChip id={user?.organisationProfile.id ?? 'ORG-74PQ20'} className="bg-white/15 text-white" />
             <VerifiedBadge verified />
-            <span>{org?.type} · since {org?.since}</span>
+            <span>Organisation profile</span>
           </div>
         </div>
       </div>
@@ -60,7 +58,7 @@ export default function Profile() {
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => setHome({ name: org?.name ?? '', email: org?.email ?? '', phone: org?.phone ?? '', address: org?.address ?? '' })}
+                onClick={() => setHome({ name: user?.organisationProfile.name ?? '', email: user?.email ?? '', phone: user?.mobile ?? '', address: '' })}
               >
                 Reset
               </Button>
@@ -78,10 +76,10 @@ export default function Profile() {
               <Input type="email" value={home.email} onChange={(e) => setHome({ ...home, email: e.target.value })} />
             </Field>
             <div className="flex justify-end gap-2 pt-1">
-              <Button size="sm" variant="outline" onClick={() => showToast('Change password link sent to organisation email.')}>
+              <Button size="sm" variant="outline" onClick={() => showToast('Password reset is available from Supabase Auth.') }>
                 Change password
               </Button>
-              <Button size="sm" variant="secondary" onClick={() => setHome({ ...home, email: org?.email ?? '' })}>
+              <Button size="sm" variant="secondary" onClick={() => setHome({ ...home, email: user?.email ?? '' })}>
                 Save changes
               </Button>
             </div>

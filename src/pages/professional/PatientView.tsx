@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import {
   ArrowLeft,
@@ -24,11 +24,16 @@ import { IdChip, AccessBadge } from '@/components/shared/IdentityBadges'
 import { patientById, type PatientProfile } from '@/data/patientProfiles'
 import { professionalById } from '@/data/professionals'
 import { formatDate } from '@/lib/utils'
+import { createAccessRequest, getPatientIdentity, getPatientRecords, getProfessionalAccess } from '@/lib/medoraServices'
 
 const tabs = ['Overview', 'AI Context', 'Timeline', 'Records', 'Care Network', 'Access'] as const
 type Tab = (typeof tabs)[number]
 
-function ProfileHeader({ p, onSubmit }: { p: PatientProfile; onSubmit: () => void }) {
+function emptyPatient(id: string): PatientProfile {
+  return { id, name: 'Patient', dob: '', gender: '', phone: '', avatarColor: 'from-brand-400 to-brand-600', recentActivity: '', access: { status: 'Pending', purpose: '', expiresAt: '', information: [] }, conditions: [], medications: [], allergies: [], timeline: [], records: [], aiContext: { relevantHistory: [], currentInformation: [], recentRelevantRecords: [], openInformation: [], conflictingInformation: [] } }
+}
+
+function ProfileHeader({ p, onSubmit, authorised }: { p: PatientProfile; onSubmit: () => void; authorised: boolean }) {
   return (
     <div className="flex flex-wrap items-center gap-4 rounded-2xl bg-gradient-to-r from-brand-600 to-navy-700 p-6 text-white shadow-soft">
       <span className={`flex size-14 items-center justify-center rounded-2xl bg-gradient-to-br text-xl font-bold text-white ${p.avatarColor}`}>
@@ -50,7 +55,7 @@ function ProfileHeader({ p, onSubmit }: { p: PatientProfile; onSubmit: () => voi
         className="bg-white text-brand-700 hover:bg-brand-50"
       >
         <Send className="size-4.5" />
-        Submit to organisation
+        {authorised ? 'Submit to organisation' : 'Request access'}
       </Button>
     </div>
   )
@@ -197,18 +202,32 @@ function AIContextTab({ p, onOpenRecord }: { p: PatientProfile; onOpenRecord: (r
 
 export default function PatientView() {
   const { patientId } = useParams<{ patientId: string }>()
-  const patient = patientById(patientId ?? '') ?? patientById('PAT-8F42K7')!
+  const fixturePatient = patientById(patientId ?? '')
+  const [patient, setPatient] = useState<PatientProfile>(() => fixturePatient ?? emptyPatient(patientId ?? ''))
+  const [records, setRecords] = useState(patient.records)
+  const [authorised, setAuthorised] = useState(false)
   const [tab, setTab] = useState<Tab>('Overview')
   const [record, setRecord] = useState<string | null>(null)
   const [submitOpen, setSubmitOpen] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!patientId) return
+    void Promise.all([getPatientIdentity(patientId), getProfessionalAccess(patientId), getPatientRecords(patientId)])
+      .then(([identity, hasAccess, loadedRecords]) => {
+        setAuthorised(hasAccess)
+        setRecords(loadedRecords)
+        setPatient((current) => ({ ...current, id: identity.id, name: identity.name, dob: identity.dob ?? '', records: loadedRecords, timeline: [], recentActivity: loadedRecords[0] ? `${loadedRecords[0].type} · ${loadedRecords[0].date}` : '' }))
+      })
+      .catch(() => { setAuthorised(false); setRecords([]); setPatient(emptyPatient(patientId)) })
+  }, [patientId])
 
   const showToast = (msg: string) => {
     setToast(msg)
     setTimeout(() => setToast(null), 3500)
   }
 
-  const linkedRecord = (id: string | undefined) => patient.records.find((r) => r.id === id) ?? null
+  const linkedRecord = (id: string | undefined) => records.find((r) => r.id === id) ?? null
 
   const careTeam = Array.from(
     new Map(
@@ -234,7 +253,15 @@ export default function PatientView() {
         <p className="text-sm text-slate-500">Patients / Patient view</p>
       </div>
 
-      <ProfileHeader p={patient} onSubmit={() => setSubmitOpen(true)} />
+      <ProfileHeader p={patient} authorised={authorised} onSubmit={() => {
+        if (authorised) {
+          setSubmitOpen(true)
+          return
+        }
+        if (patientId) void createAccessRequest(patientId, 'Professional consultation', ['Relevant history', 'Medications', 'Selected records'])
+          .then(() => showToast('Access request sent to the patient.'))
+          .catch((err: unknown) => showToast(err instanceof Error ? err.message : 'Unable to request access.'))
+      }} />
 
       <TabBar tabs={tabs} active={tab} onChange={setTab} className="w-fit" />
 
@@ -245,9 +272,9 @@ export default function PatientView() {
       ) : null}
       {tab === 'Records' ? (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {patient.records.map((r) => (
+          {authorised ? records.map((r) => (
             <RecordCard key={r.id} record={r} onOpen={() => setRecord(r.id)} />
-          ))}
+          )) : <Card><CardContent className="py-12 text-center text-sm text-slate-500">Patient approval is required before records can be viewed.</CardContent></Card>}
         </div>
       ) : null}
       {tab === 'Care Network' ? (

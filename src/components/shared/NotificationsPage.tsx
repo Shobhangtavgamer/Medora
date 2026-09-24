@@ -1,4 +1,4 @@
-﻿import { useState } from 'react'
+﻿import { useEffect, useState } from 'react'
 import {
   ArrowLeftRight,
   Bell,
@@ -10,10 +10,13 @@ import {
 import { Card, CardContent } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { PageHeader } from '@/components/shared/PageHeader'
-import { notifications, type Notification } from '@/data/notifications'
+import type { Notification } from '@/data/notifications'
 import { formatDate } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import type { Workspace } from '@/context/AuthContext'
+import { getNotifications, markNotificationsRead } from '@/lib/medoraServices'
+
+type LiveNotification = { id: string; type: string; title: string; message: string; read: boolean; created_at: string }
 
 const kindIcon = {
   request: Inbox,
@@ -34,14 +37,16 @@ const kindTone: Record<Notification['kind'], 'brand' | 'navy' | 'amber' | 'green
 }
 
 export function NotificationsPage({ role }: { role: Workspace }) {
+  const [list, setList] = useState<LiveNotification[]>([])
   const [read, setRead] = useState<Record<string, boolean>>({})
-  const list = notifications.filter((n) => n.workspace === role)
+  useEffect(() => { void getNotifications().then(setList).catch(() => setList([])) }, [role])
   const unread = list.filter((n) => !read[n.id] && !n.read).length
 
   const markAll = () => {
     const next: Record<string, boolean> = {}
     list.forEach((n) => (next[n.id] = true))
     setRead(next)
+    void markNotificationsRead()
   }
 
   return (
@@ -62,7 +67,8 @@ export function NotificationsPage({ role }: { role: Workspace }) {
       ) : (
         <div className="space-y-3">
           {list.map((n) => {
-            const Icon = kindIcon[n.kind]
+            const kind: Notification['kind'] = n.type.includes('record') ? 'record' : n.type.includes('access') ? 'access' : 'request'
+            const Icon = kindIcon[kind]
             const isUnread = !read[n.id] && !n.read
             return (
               <Card key={n.id} className={cn('transition', isUnread && 'ring-brand-300')}>
@@ -70,16 +76,16 @@ export function NotificationsPage({ role }: { role: Workspace }) {
                   <span
                     className={cn(
                       'flex size-10 shrink-0 items-center justify-center rounded-xl ring-1',
-                      kindTone[n.kind] === 'navy'
-                        ? 'bg-navy-50 text-navy-600 ring-navy-100'
-                        : kindTone[n.kind] === 'violet'
-                          ? 'bg-violet-50 text-violet-600 ring-violet-100'
-                          : kindTone[n.kind] === 'green'
-                            ? 'bg-green-50 text-green-600 ring-green-100'
-                            : kindTone[n.kind] === 'amber'
-                              ? 'bg-amber-50 text-amber-600 ring-amber-100'
-                              : kindTone[n.kind] === 'red'
-                                ? 'bg-red-50 text-red-600 ring-red-100'
+                      kindTone[kind] === 'navy'
+                          ? 'bg-navy-50 text-navy-600 ring-navy-100'
+                          : kindTone[kind] === 'violet'
+                            ? 'bg-violet-50 text-violet-600 ring-violet-100'
+                            : kindTone[kind] === 'green'
+                              ? 'bg-green-50 text-green-600 ring-green-100'
+                              : kindTone[kind] === 'amber'
+                                ? 'bg-amber-50 text-amber-600 ring-amber-100'
+                                : kindTone[kind] === 'red'
+                                  ? 'bg-red-50 text-red-600 ring-red-100'
                                 : 'bg-slate-100 text-slate-500 ring-slate-200',
                     )}
                   >
@@ -91,12 +97,12 @@ export function NotificationsPage({ role }: { role: Workspace }) {
                         {n.title}
                         {isUnread ? <span className="size-2 rounded-full bg-brand-600" /> : null}
                       </p>
-                      <Badge tone={kindTone[n.kind]} className="text-[10px]">
-                        {n.kind}
+                      <Badge tone={kindTone[kind]} className="text-[10px]">
+                        {kind}
                       </Badge>
                     </div>
-                    <p className="mt-1 text-sm leading-relaxed text-slate-600">{n.body}</p>
-                    <p className="mt-1.5 text-xs text-slate-400">{formatDate(n.date)}</p>
+                    <p className="mt-1 text-sm leading-relaxed text-slate-600">{n.message}</p>
+                    <p className="mt-1.5 text-xs text-slate-400">{formatDate(n.created_at)}</p>
                   </div>
                 </CardContent>
               </Card>
